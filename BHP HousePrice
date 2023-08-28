@@ -1,0 +1,226 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import numpy as np
+
+data=pd.read_csv(r"C://Users//SHRI//Downloads//Dataset Titanic//BHP.csv",encoding="ISO-8859-1")
+data
+
+data.head()
+# get shape of data
+print("Columns:",data.shape[1])
+print("Rows:",data.shape[0])
+
+data.info()
+
+data.isna().sum()
+
+# get unique value for each columns
+for col in data.columns:
+    print("unique value of", col)
+    print(data[col].unique(), "\n")
+
+print("Summary of Unique Value:")
+print(data.nunique())
+
+# display statistics for numeric value
+data.describe()
+
+# Visualize/plot numeric value
+numeric = [x for x in data.columns if data[x].dtype == "float64"]
+fig = plt.figure(figsize=(20,17))
+for i, var in enumerate(numeric):
+    plt.subplot(3,3,i+1)
+    sns.histplot(data = data, x = var)
+
+plt.show()
+
+# Data Preparation
+# Drop some column that maybe not esessential for the model
+
+df_2 = data.drop(columns = ["availability", "society", "area_type"])
+df_2.head()
+
+# Handle Nan Value with mode
+for col in df_2.columns:
+    df_2[col] = df_2[col].fillna(df_2[col].mode()[0])
+
+df_2.isna().sum()
+
+df_2.head()
+
+# look at size column
+'''
+from data exploration, it contains total of rooms in the house, assume Bedroom and BHK(bedroom hall and kitchen) is the 
+same thing, so we just need the number 
+'''
+
+df_2['size'] = df_2['size'].apply(lambda x: float(x.split(' ')[0]))
+
+df_2.head()
+
+# rename size column
+df_2.rename(columns={"size": "bedroom"},inplace = True)
+
+# Look at total_squarefeet column 
+'''
+from data exploration, we can see that total_sqft contains range value so the value of the column become object instead 
+of float64/number
+'''
+df_2["total_sqft"].unique()
+
+def is_float(x):
+    '''
+    this function will check, if the value of x can be represented as float then return true otherwise return false
+    '''
+    try:
+        float(x)
+    except:
+        return False
+    
+    return True
+
+df_2[~(df_2['total_sqft'].apply(is_float))]
+
+# make converter function
+def convert_sqft_to_num(x):
+    '''
+    the converted value is a mean between a range 
+    '''
+    split_val = x.split('-')
+    if(len(split_val) == 2):
+        return (float(split_val[0]) + float(split_val[1]))/2
+    try:
+        return float(x)
+    except:
+        return None
+
+# lets convert the total squarefeet column type to float/number
+df_3 = df_2.copy()
+df_3['total_sqft'] = df_3['total_sqft'].apply(convert_sqft_to_num)
+print("Sqft column data types : ", df_3['total_sqft'].dtype)
+
+df_3.tail()
+
+# is that everything ok ?
+df_3[df_3['total_sqft'].isna()].head()
+
+# wow, we got some nan value, lets observe this
+df_2[df_3['total_sqft'].isna()].head()
+
+# in this case we drop the anomaly input in total_sqft
+df_3 = df_3[~(df_3['total_sqft'].isna())]
+
+df_3.isna().sum()
+
+# lets make price per total square feet feature
+# 1 lakh : 100000 Rupee
+df_4 = df_3.copy()
+df_4['price_per_sqft'] = df_4['price']/df_4['total_sqft']
+df_4
+
+# look location column unique value
+
+print(f"total unique value of location:", df_4['location'].nunique())
+
+# there are a lot of location, so when we put in modeling with one hot encode it will becomes 1305 columns?
+# let's clean up this
+# Clean spacing in each value of location column
+df_4['location'] = df_4['location'].apply(lambda x: x.strip()) 
+
+# actually this will reduce the unique value because "[space]" is sensitive
+print(f"total unique value of location:", df_4['location'].nunique())
+
+# let's group location by total house in dataset and see which location has a lot of house
+location_stats = df_4.groupby(['location'])['location'].agg('count').sort_values(ascending=False)
+location_stats
+
+# how many location that has less than 10 house
+location_stats[location_stats<10]
+
+# we set 1040 location that has less than 10 house as "other"
+location_stats_less_than_10 = location_stats[location_stats < 10]
+df_4['location'] = df_4['location'].apply(lambda x: 'other' if x in location_stats_less_than_10 else x)
+
+print(f"total unique value of location:", df_4['location'].nunique())
+
+df_4.head(10)
+
+# assume that total square ft / bedroom the ideal value is > 200
+df_5 = df_4.copy()
+df_5[df_5['total_sqft']/df_5['bedroom'] < 200].head()
+
+# lets remove value that less than 200
+df_5 = df_5[~(df_5['total_sqft']/df_5['bedroom'] < 200)]
+df_5
+
+# check column target boxplot
+sns.boxplot(data = df_5, x = 'price')
+plt.show()
+
+# remove price above 3500
+df_5 = df_5[~(df_5['price'] > 3500)]
+
+df_5['price_per_sqft'].describe()
+
+def outlier_removal_price_per_sqft(df):
+    df_out = pd.DataFrame()
+    for index, location_df in df.groupby('location'):
+        m = np.mean(location_df['price_per_sqft'])
+        s = np.std(location_df['price_per_sqft'])
+        without_outlier = location_df[(location_df['price_per_sqft']>(m-s)) & (location_df['price_per_sqft']<(m+s))]
+        df_out = pd.concat([df_out,without_outlier], ignore_index=True)
+    return df_out
+
+df_5 = outlier_removal_price_per_sqft(df_5)
+
+# let say we have 2 bedroom, and the proper bathroom is 2 or 3, what if 4 it doesnt make sense right?
+df_5[df_5['bath'] > (df_5['bedroom']+2)]
+
+df_5 = df_5[df_5['bath'] < (df_5['bedroom']+2)]
+
+df_6 = df_5.copy()
+df_6.head()
+
+# location column is nominal, lets use one hot encoding
+one_hot_location = pd.get_dummies(df_6['location'])
+one_hot_location.head()
+
+df_7 = pd.concat([df_6.drop('location', axis = 1), one_hot_location], axis = 1)
+df_7.head()
+
+# Before we go to modeling section lets drop some duplicated rows in dataset
+df_7.duplicated().sum()
+
+df_7.drop_duplicates(inplace = True, ignore_index = True)
+print(df_7.duplicated().sum())
+
+df_7.shape
+
+df_6.describe()
+
+# Linear Regression
+
+# Split dataset
+df_8 = df_7.copy()
+
+X = df_8.drop(columns = ['price', 'price_per_sqft'])
+X.head()
+
+# log transform target column, avoid model predict negative result
+y = np.log(df_8['price'])
+y
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X,y,test_size = 0.2, random_state = 15).
+
+from sklearn.linear_model import LinearRegression
+lineg = LinearRegression()
+lineg.fit(X_train, y_train)
+lineg.score(X_test, y_test)
+
+
+
+        
+    
+
