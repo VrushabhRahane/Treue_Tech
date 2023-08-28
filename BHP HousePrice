@@ -219,6 +219,59 @@ lineg = LinearRegression()
 lineg.fit(X_train, y_train)
 lineg.score(X_test, y_test)
 
+# now we do some test for our model with cross validatopn
+from sklearn.model_selection import ShuffleSplit
+from sklearn.model_selection import cross_val_score
+
+cross_val = ShuffleSplit(n_splits = 5, test_size = 0.2, random_state = 15)
+cross_val_score(LinearRegression(), X, y, cv = cross_val)
+
+# Trying Different Algorithm with Grid Search CV
+# we are using laso regression and decision tree regressor to campare with Linear regressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.linear_model import Lasso
+from sklearn.model_selection import GridSearchCV
+
+def find_best_algo_with_gridCV(X,y):
+    # define algo and paramater
+    algos = {
+        'linear-regression':{
+            'model': LinearRegression(),
+            'params':{
+                'positive': [True, False]
+            }
+        },
+        'lasso':{
+            'model': Lasso(),
+            'params':{
+                'alpha':[1,2],
+                'selection':['random', 'cyclic']
+            }
+        },
+        'decision_tree_regression':{
+            'model':DecisionTreeRegressor(),
+            'params': {
+                'criterion':['absolute_error', 'squared_error'],
+                'splitter':["best", "random"]
+            }
+        }
+    }
+    
+    # compute
+    scores = []
+    cross_valid_ = ShuffleSplit(n_splits = 5, test_size = 0.2, random_state = 15)
+    for algo_name, conf in algos.items():
+        gs = GridSearchCV(conf['model'], conf['params'], cv = cross_valid_, return_train_score = False)
+        gs.fit(X,y)
+        scores.append({
+            'model':algo_name,
+            'best_score':gs.best_score_,
+            'best_params':gs.best_params_
+        })
+    
+    return pd.DataFrame(scores, columns = ['model', 'best_score','best_params'])
+
+find_best_algo_with_gridCV(X,y)
 
 
         
